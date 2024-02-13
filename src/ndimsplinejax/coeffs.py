@@ -7,11 +7,12 @@ defined by Habermann and Kindermann 2007.
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, ArrayLike, Float
+from jaxtyping import Array, Float
+from numpy.typing import NDArray
 from scipy import linalg
 
 
-class SplineCoefs_from_GriddedData:
+class SplineCoefs_from_GriddedData(eqx.Module):  # type: ignore[misc]
     """Compute the coeffcieits.
 
     Compute the coefficients of the N-dimensitonal natural-cubic spline
@@ -48,505 +49,471 @@ class SplineCoefs_from_GriddedData:
     Created on Fri Oct 21 13:41:11 2022
     """
 
-    def __init__(
-        self,
-        a: ArrayLike | list[float | int],
-        b: ArrayLike | list[float | int],
-        y_data: ArrayLike,
-    ) -> None:
-        self.N = len(a)  # dimension of the problem
-        # list of lower bound of x-coordinate in each dimension [dim1, dim2, ... ]
-        self.a = np.array(a, dtype=float)
-        # list of uppder bound of x-coordinate in each dimension [dim1, dim2, ... ]
-        self.b = np.array(b, dtype=float)
-        # number of grid interval n in each dimension
-        self.n = np.zeros(self.N, dtype=int)
-        # N-dimensional numpy array of y-data ydata[idx1,idx2,...] where the
-        # idx1 is the index of grid point along 1st dimension and so forth
-        self.y_data = np.array(y_data)
-        for j in range(self.N):
-            # number of grid interval n in each dimension
-            self.n[j] = self.y_data.shape[j] - 1
+    a: Float[np.ndarray, "N"] = eqx.field(
+        converter=lambda x: np.array(x, dtype=float), static=True
+    )
+    b: Float[np.ndarray, "N"] = eqx.field(
+        converter=lambda x: np.array(x, dtype=float), static=True
+    )
+    y_data: Float[np.ndarray, "..."] = eqx.field(
+        converter=lambda x: np.array(x, dtype=float), static=True
+    )
+
+    @property
+    def N(self) -> int:
+        """Dimension of the problem."""
+        return len(self.a)
+
+    @property
+    def n(self) -> NDArray[np.integer]:
+        """Number of grid interval n in each dimension."""
+        return np.asarray(self.y_data.shape, dtype=int) - 1
 
     def get_c_shape(self, k: int) -> tuple[int, ...]:
         """Get the shape of the coefficient array."""
-        return tuple(int(self.n[j]) + (3 if j <= k else 1) for j in range(self.N))
+        n = self.n
+        return tuple(int(n[j]) + (3 if j <= k else 1) for j in range(self.N))
 
     def _compute_coefs_1d(self) -> Float[Array, "..."]:
+        n = self.n
         k = 0  # 1-st dimension
         c_i1 = np.zeros(self.get_c_shape(k))
         c_i1[1] = self.y_data[0] / 6  # c_{2}
-        c_i1[self.n[k] + 1] = self.y_data[self.n[k]] / 6  # c_{n+2}
-        A = (
-            np.eye(self.n[k] - 1) * 4
-            + np.eye(self.n[k] - 1, k=1)
-            + np.eye(self.n[k] - 1, k=-1)
-        )
-        B = np.zeros(self.n[k] - 1)
+        c_i1[n[k] + 1] = self.y_data[n[k]] / 6  # c_{n+2}
+        A = np.eye(n[k] - 1) * 4 + np.eye(n[k] - 1, k=1) + np.eye(n[k] - 1, k=-1)
+        B = np.zeros(n[k] - 1)
         B[0] = self.y_data[1] - c_i1[1]
-        B[self.n[k] - 2] = self.y_data[self.n[k] - 1] - c_i1[self.n[k] + 1]
-        B[1 : self.n[k] - 2] = self.y_data[2 : self.n[k] - 1]
+        B[n[k] - 2] = self.y_data[n[k] - 1] - c_i1[n[k] + 1]
+        B[1 : n[k] - 2] = self.y_data[2 : n[k] - 1]
         sol = linalg.solve(A, B)
-        c_i1[2 : self.n[k] + 1] = sol
+        c_i1[2 : n[k] + 1] = sol
         c_i1[0] = 2 * c_i1[1] - c_i1[2]
-        c_i1[self.n[k] + 2] = 2 * c_i1[self.n[k] + 1] - c_i1[self.n[k]]
+        c_i1[n[k] + 2] = 2 * c_i1[n[k] + 1] - c_i1[n[k]]
 
         return jnp.asarray(c_i1)
 
     def _compute_coefs_2d(self) -> Float[Array, "..."]:
+        n = self.n
         k = 0  # 1-st dimension
         c_i1q2 = np.zeros(self.get_c_shape(k))
-        for q2 in range(self.n[1] + 1):
+        for q2 in range(n[1] + 1):
             c_i1q2[1, q2] = self.y_data[0, q2] / 6  # c_{2}
-            c_i1q2[self.n[k] + 1, q2] = self.y_data[self.n[k], q2] / 6  # c_{n+2}
-            A = (
-                np.eye(self.n[k] - 1) * 4
-                + np.eye(self.n[k] - 1, k=1)
-                + np.eye(self.n[k] - 1, k=-1)
-            )
-            B = np.zeros(self.n[k] - 1)
+            c_i1q2[n[k] + 1, q2] = self.y_data[n[k], q2] / 6  # c_{n+2}
+            A = np.eye(n[k] - 1) * 4 + np.eye(n[k] - 1, k=1) + np.eye(n[k] - 1, k=-1)
+            B = np.zeros(n[k] - 1)
             B[0] = self.y_data[1, q2] - c_i1q2[1, q2]
-            B[self.n[k] - 2] = (
-                self.y_data[self.n[k] - 1, q2] - c_i1q2[self.n[k] + 1, q2]
-            )
-            B[1 : self.n[k] - 2] = self.y_data[2 : self.n[k] - 1, q2]
+            B[n[k] - 2] = self.y_data[n[k] - 1, q2] - c_i1q2[n[k] + 1, q2]
+            B[1 : n[k] - 2] = self.y_data[2 : n[k] - 1, q2]
             sol = linalg.solve(A, B)
-            c_i1q2[2 : self.n[k] + 1, q2] = sol
+            c_i1q2[2 : n[k] + 1, q2] = sol
             c_i1q2[0, q2] = 2 * c_i1q2[1, q2] - c_i1q2[2, q2]
-            c_i1q2[self.n[k] + 2, q2] = (
-                2 * c_i1q2[self.n[k] + 1, q2] - c_i1q2[self.n[k], q2]
-            )
+            c_i1q2[n[k] + 2, q2] = 2 * c_i1q2[n[k] + 1, q2] - c_i1q2[n[k], q2]
 
         k = 1  # 2nd dimension
         c_i1i2 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
+        for i1 in range(n[0] + 3):
             c_i1i2[i1, 1] = c_i1q2[i1, 0] / 6  # c_{2}
-            c_i1i2[i1, self.n[k] + 1] = c_i1q2[i1, self.n[k]] / 6  # c_{n+2}
-            A = (
-                np.eye(self.n[k] - 1) * 4
-                + np.eye(self.n[k] - 1, k=1)
-                + np.eye(self.n[k] - 1, k=-1)
-            )
-            B = np.zeros(self.n[k] - 1)
+            c_i1i2[i1, n[k] + 1] = c_i1q2[i1, n[k]] / 6  # c_{n+2}
+            A = np.eye(n[k] - 1) * 4 + np.eye(n[k] - 1, k=1) + np.eye(n[k] - 1, k=-1)
+            B = np.zeros(n[k] - 1)
             B[0] = c_i1q2[i1, 1] - c_i1i2[i1, 1]
-            B[self.n[k] - 2] = c_i1q2[i1, self.n[k] - 1] - c_i1i2[i1, self.n[k] + 1]
-            B[1 : self.n[k] - 2] = c_i1q2[i1, 2 : self.n[k] - 1]
+            B[n[k] - 2] = c_i1q2[i1, n[k] - 1] - c_i1i2[i1, n[k] + 1]
+            B[1 : n[k] - 2] = c_i1q2[i1, 2 : n[k] - 1]
             sol = linalg.solve(A, B)
-            c_i1i2[i1, 2 : self.n[k] + 1] = sol
+            c_i1i2[i1, 2 : n[k] + 1] = sol
             c_i1i2[i1, 0] = 2 * c_i1i2[i1, 1] - c_i1i2[i1, 2]
-            c_i1i2[i1, self.n[k] + 2] = (
-                2 * c_i1i2[i1, self.n[k] + 1] - c_i1i2[i1, self.n[k]]
-            )
+            c_i1i2[i1, n[k] + 2] = 2 * c_i1i2[i1, n[k] + 1] - c_i1i2[i1, n[k]]
 
         return jnp.asarray(c_i1i2)
 
     def _compute_coefs_3d(self) -> Float[Array, "..."]:
+        n = self.n
         k = 0  # 1-st dimension
         c_i1q2q3 = np.zeros(self.get_c_shape(k))
-        for q2 in range(self.n[1] + 1):
-            for q3 in range(self.n[2] + 1):
+        for q2 in range(n[1] + 1):
+            for q3 in range(n[2] + 1):
                 c_i1q2q3[1, q2, q3] = self.y_data[0, q2, q3] / 6  # c_{2}
-                c_i1q2q3[self.n[k] + 1, q2, q3] = (
-                    self.y_data[self.n[k], q2, q3] / 6
-                )  # c_{n+2}
+                c_i1q2q3[n[k] + 1, q2, q3] = self.y_data[n[k], q2, q3] / 6  # c_{n+2}
                 A = (
-                    np.eye(self.n[k] - 1) * 4
-                    + np.eye(self.n[k] - 1, k=1)
-                    + np.eye(self.n[k] - 1, k=-1)
+                    np.eye(n[k] - 1) * 4
+                    + np.eye(n[k] - 1, k=1)
+                    + np.eye(n[k] - 1, k=-1)
                 )
-                B = np.zeros(self.n[k] - 1)
+                B = np.zeros(n[k] - 1)
                 B[0] = self.y_data[1, q2, q3] - c_i1q2q3[1, q2, q3]
-                B[self.n[k] - 2] = (
-                    self.y_data[self.n[k] - 1, q2, q3] - c_i1q2q3[self.n[k] + 1, q2, q3]
-                )
-                B[1 : self.n[k] - 2] = self.y_data[2 : self.n[k] - 1, q2, q3]
+                B[n[k] - 2] = self.y_data[n[k] - 1, q2, q3] - c_i1q2q3[n[k] + 1, q2, q3]
+                B[1 : n[k] - 2] = self.y_data[2 : n[k] - 1, q2, q3]
                 sol = linalg.solve(A, B)
-                c_i1q2q3[2 : self.n[k] + 1, q2, q3] = sol
+                c_i1q2q3[2 : n[k] + 1, q2, q3] = sol
                 c_i1q2q3[0, q2, q3] = 2 * c_i1q2q3[1, q2, q3] - c_i1q2q3[2, q2, q3]
-                c_i1q2q3[self.n[k] + 2, q2, q3] = (
-                    2 * c_i1q2q3[self.n[k] + 1, q2, q3] - c_i1q2q3[self.n[k], q2, q3]
+                c_i1q2q3[n[k] + 2, q2, q3] = (
+                    2 * c_i1q2q3[n[k] + 1, q2, q3] - c_i1q2q3[n[k], q2, q3]
                 )
 
         k = 1  # 2nd dimension
         c_i1i2q3 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for q3 in range(self.n[2] + 1):
+        for i1 in range(n[0] + 3):
+            for q3 in range(n[2] + 1):
                 c_i1i2q3[i1, 1, q3] = c_i1q2q3[i1, 0, q3] / 6  # c_{2}
-                c_i1i2q3[i1, self.n[k] + 1, q3] = (
-                    c_i1q2q3[i1, self.n[k], q3] / 6
-                )  # c_{n+2}
+                c_i1i2q3[i1, n[k] + 1, q3] = c_i1q2q3[i1, n[k], q3] / 6  # c_{n+2}
                 A = (
-                    np.eye(self.n[k] - 1) * 4
-                    + np.eye(self.n[k] - 1, k=1)
-                    + np.eye(self.n[k] - 1, k=-1)
+                    np.eye(n[k] - 1) * 4
+                    + np.eye(n[k] - 1, k=1)
+                    + np.eye(n[k] - 1, k=-1)
                 )
-                B = np.zeros(self.n[k] - 1)
+                B = np.zeros(n[k] - 1)
                 B[0] = c_i1q2q3[i1, 1, q3] - c_i1i2q3[i1, 1, q3]
-                B[self.n[k] - 2] = (
-                    c_i1q2q3[i1, self.n[k] - 1, q3] - c_i1i2q3[i1, self.n[k] + 1, q3]
-                )
-                B[1 : self.n[k] - 2] = c_i1q2q3[i1, 2 : self.n[k] - 1, q3]
+                B[n[k] - 2] = c_i1q2q3[i1, n[k] - 1, q3] - c_i1i2q3[i1, n[k] + 1, q3]
+                B[1 : n[k] - 2] = c_i1q2q3[i1, 2 : n[k] - 1, q3]
                 sol = linalg.solve(A, B)
-                c_i1i2q3[i1, 2 : self.n[k] + 1, q3] = sol
+                c_i1i2q3[i1, 2 : n[k] + 1, q3] = sol
                 c_i1i2q3[i1, 0, q3] = 2 * c_i1i2q3[i1, 1, q3] - c_i1i2q3[i1, 2, q3]
-                c_i1i2q3[i1, self.n[k] + 2, q3] = (
-                    2 * c_i1i2q3[i1, self.n[k] + 1, q3] - c_i1i2q3[i1, self.n[k], q3]
+                c_i1i2q3[i1, n[k] + 2, q3] = (
+                    2 * c_i1i2q3[i1, n[k] + 1, q3] - c_i1i2q3[i1, n[k], q3]
                 )
 
         k = 2  # 3rd dimension
         c_i1i2i3 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for i2 in range(self.n[1] + 3):
+        for i1 in range(n[0] + 3):
+            for i2 in range(n[1] + 3):
                 c_i1i2i3[i1, i2, 1] = c_i1i2q3[i1, i2, 0] / 6  # c_{2}
-                c_i1i2i3[i1, i2, self.n[k] + 1] = (
-                    c_i1i2q3[i1, i2, self.n[k]] / 6
-                )  # c_{n+2}
+                c_i1i2i3[i1, i2, n[k] + 1] = c_i1i2q3[i1, i2, n[k]] / 6  # c_{n+2}
                 A = (
-                    np.eye(self.n[k] - 1) * 4
-                    + np.eye(self.n[k] - 1, k=1)
-                    + np.eye(self.n[k] - 1, k=-1)
+                    np.eye(n[k] - 1) * 4
+                    + np.eye(n[k] - 1, k=1)
+                    + np.eye(n[k] - 1, k=-1)
                 )
-                B = np.zeros(self.n[k] - 1)
+                B = np.zeros(n[k] - 1)
                 B[0] = c_i1i2q3[i1, i2, 1] - c_i1i2i3[i1, i2, 1]
-                B[self.n[k] - 2] = (
-                    c_i1i2q3[i1, i2, self.n[k] - 1] - c_i1i2i3[i1, i2, self.n[k] + 1]
-                )
-                B[1 : self.n[k] - 2] = c_i1i2q3[i1, i2, 2 : self.n[k] - 1]
+                B[n[k] - 2] = c_i1i2q3[i1, i2, n[k] - 1] - c_i1i2i3[i1, i2, n[k] + 1]
+                B[1 : n[k] - 2] = c_i1i2q3[i1, i2, 2 : n[k] - 1]
                 sol = linalg.solve(A, B)
-                c_i1i2i3[i1, i2, 2 : self.n[k] + 1] = sol
+                c_i1i2i3[i1, i2, 2 : n[k] + 1] = sol
                 c_i1i2i3[i1, i2, 0] = 2 * c_i1i2i3[i1, i2, 1] - c_i1i2i3[i1, i2, 2]
-                c_i1i2i3[i1, i2, self.n[k] + 2] = (
-                    2 * c_i1i2i3[i1, i2, self.n[k] + 1] - c_i1i2i3[i1, i2, self.n[k]]
+                c_i1i2i3[i1, i2, n[k] + 2] = (
+                    2 * c_i1i2i3[i1, i2, n[k] + 1] - c_i1i2i3[i1, i2, n[k]]
                 )
 
         return jnp.asarray(c_i1i2i3)
 
     def _compute_coefs_4d(self) -> Float[Array, "..."]:  # noqa: C901
+        n = self.n
         k = 0  # 1st dimension
         c_i1q2q3q4 = np.zeros(self.get_c_shape(k))
-        for q2 in range(self.n[1] + 1):
-            for q3 in range(self.n[2] + 1):
-                for q4 in range(self.n[3] + 1):
+        for q2 in range(n[1] + 1):
+            for q3 in range(n[2] + 1):
+                for q4 in range(n[3] + 1):
                     c_i1q2q3q4[1, q2, q3, q4] = self.y_data[0, q2, q3, q4] / 6  # c_{2}
-                    c_i1q2q3q4[self.n[k] + 1, q2, q3, q4] = (
-                        self.y_data[self.n[k], q2, q3, q4] / 6
+                    c_i1q2q3q4[n[k] + 1, q2, q3, q4] = (
+                        self.y_data[n[k], q2, q3, q4] / 6
                     )  # c_{n+2}
                     A = (
-                        np.eye(self.n[k] - 1) * 4
-                        + np.eye(self.n[k] - 1, k=1)
-                        + np.eye(self.n[k] - 1, k=-1)
+                        np.eye(n[k] - 1) * 4
+                        + np.eye(n[k] - 1, k=1)
+                        + np.eye(n[k] - 1, k=-1)
                     )
-                    B = np.zeros(self.n[k] - 1)
+                    B = np.zeros(n[k] - 1)
                     B[0] = self.y_data[1, q2, q3, q4] - c_i1q2q3q4[1, q2, q3, q4]
-                    B[self.n[k] - 2] = (
-                        self.y_data[self.n[k] - 1, q2, q3, q4]
-                        - c_i1q2q3q4[self.n[k] + 1, q2, q3, q4]
+                    B[n[k] - 2] = (
+                        self.y_data[n[k] - 1, q2, q3, q4]
+                        - c_i1q2q3q4[n[k] + 1, q2, q3, q4]
                     )
-                    B[1 : self.n[k] - 2] = self.y_data[2 : self.n[k] - 1, q2, q3, q4]
+                    B[1 : n[k] - 2] = self.y_data[2 : n[k] - 1, q2, q3, q4]
                     sol = linalg.solve(A, B)
-                    c_i1q2q3q4[2 : self.n[k] + 1, q2, q3, q4] = sol
+                    c_i1q2q3q4[2 : n[k] + 1, q2, q3, q4] = sol
                     c_i1q2q3q4[0, q2, q3, q4] = (
                         2 * c_i1q2q3q4[1, q2, q3, q4] - c_i1q2q3q4[2, q2, q3, q4]
                     )
-                    c_i1q2q3q4[self.n[k] + 2, q2, q3, q4] = (
-                        2 * c_i1q2q3q4[self.n[k] + 1, q2, q3, q4]
-                        - c_i1q2q3q4[self.n[k], q2, q3, q4]
+                    c_i1q2q3q4[n[k] + 2, q2, q3, q4] = (
+                        2 * c_i1q2q3q4[n[k] + 1, q2, q3, q4]
+                        - c_i1q2q3q4[n[k], q2, q3, q4]
                     )
 
         k = 1  # 2nd dimension
         c_i1i2q3q4 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for q3 in range(self.n[2] + 1):
-                for q4 in range(self.n[3] + 1):
+        for i1 in range(n[0] + 3):
+            for q3 in range(n[2] + 1):
+                for q4 in range(n[3] + 1):
                     c_i1i2q3q4[i1, 1, q3, q4] = c_i1q2q3q4[i1, 0, q3, q4] / 6  # c_{2}
-                    c_i1i2q3q4[i1, self.n[k] + 1, q3, q4] = (
-                        c_i1q2q3q4[i1, self.n[k], q3, q4] / 6
+                    c_i1i2q3q4[i1, n[k] + 1, q3, q4] = (
+                        c_i1q2q3q4[i1, n[k], q3, q4] / 6
                     )  # c_{n+2}
                     A = (
-                        np.eye(self.n[k] - 1) * 4
-                        + np.eye(self.n[k] - 1, k=1)
-                        + np.eye(self.n[k] - 1, k=-1)
+                        np.eye(n[k] - 1) * 4
+                        + np.eye(n[k] - 1, k=1)
+                        + np.eye(n[k] - 1, k=-1)
                     )
-                    B = np.zeros(self.n[k] - 1)
+                    B = np.zeros(n[k] - 1)
                     B[0] = c_i1q2q3q4[i1, 1, q3, q4] - c_i1i2q3q4[i1, 1, q3, q4]
-                    B[self.n[k] - 2] = (
-                        c_i1q2q3q4[i1, self.n[k] - 1, q3, q4]
-                        - c_i1i2q3q4[i1, self.n[k] + 1, q3, q4]
+                    B[n[k] - 2] = (
+                        c_i1q2q3q4[i1, n[k] - 1, q3, q4]
+                        - c_i1i2q3q4[i1, n[k] + 1, q3, q4]
                     )
-                    B[1 : self.n[k] - 2] = c_i1q2q3q4[i1, 2 : self.n[k] - 1, q3, q4]
+                    B[1 : n[k] - 2] = c_i1q2q3q4[i1, 2 : n[k] - 1, q3, q4]
                     sol = linalg.solve(A, B)
-                    c_i1i2q3q4[i1, 2 : self.n[k] + 1, q3, q4] = sol
+                    c_i1i2q3q4[i1, 2 : n[k] + 1, q3, q4] = sol
                     c_i1i2q3q4[i1, 0, q3, q4] = (
                         2 * c_i1i2q3q4[i1, 1, q3, q4] - c_i1i2q3q4[i1, 2, q3, q4]
                     )
-                    c_i1i2q3q4[i1, self.n[k] + 2, q3, q4] = (
-                        2 * c_i1i2q3q4[i1, self.n[k] + 1, q3, q4]
-                        - c_i1i2q3q4[i1, self.n[k], q3, q4]
+                    c_i1i2q3q4[i1, n[k] + 2, q3, q4] = (
+                        2 * c_i1i2q3q4[i1, n[k] + 1, q3, q4]
+                        - c_i1i2q3q4[i1, n[k], q3, q4]
                     )
 
         k = 2  # 3rd dimension
         c_i1i2i3q4 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for i2 in range(self.n[1] + 3):
-                for q4 in range(self.n[3] + 1):
+        for i1 in range(n[0] + 3):
+            for i2 in range(n[1] + 3):
+                for q4 in range(n[3] + 1):
                     c_i1i2i3q4[i1, i2, 1, q4] = c_i1i2q3q4[i1, i2, 0, q4] / 6  # c_{2}
-                    c_i1i2i3q4[i1, i2, self.n[k] + 1, q4] = (
-                        c_i1i2q3q4[i1, i2, self.n[k], q4] / 6
+                    c_i1i2i3q4[i1, i2, n[k] + 1, q4] = (
+                        c_i1i2q3q4[i1, i2, n[k], q4] / 6
                     )  # c_{n+2}
                     A = (
-                        np.eye(self.n[k] - 1) * 4
-                        + np.eye(self.n[k] - 1, k=1)
-                        + np.eye(self.n[k] - 1, k=-1)
+                        np.eye(n[k] - 1) * 4
+                        + np.eye(n[k] - 1, k=1)
+                        + np.eye(n[k] - 1, k=-1)
                     )
-                    B = np.zeros(self.n[k] - 1)
+                    B = np.zeros(n[k] - 1)
                     B[0] = c_i1i2q3q4[i1, i2, 1, q4] - c_i1i2i3q4[i1, i2, 1, q4]
-                    B[self.n[k] - 2] = (
-                        c_i1i2q3q4[i1, i2, self.n[k] - 1, q4]
-                        - c_i1i2i3q4[i1, i2, self.n[k] + 1, q4]
+                    B[n[k] - 2] = (
+                        c_i1i2q3q4[i1, i2, n[k] - 1, q4]
+                        - c_i1i2i3q4[i1, i2, n[k] + 1, q4]
                     )
-                    B[1 : self.n[k] - 2] = c_i1i2q3q4[i1, i2, 2 : self.n[k] - 1, q4]
+                    B[1 : n[k] - 2] = c_i1i2q3q4[i1, i2, 2 : n[k] - 1, q4]
                     sol = linalg.solve(A, B)
-                    c_i1i2i3q4[i1, i2, 2 : self.n[k] + 1, q4] = sol
+                    c_i1i2i3q4[i1, i2, 2 : n[k] + 1, q4] = sol
                     c_i1i2i3q4[i1, i2, 0, q4] = (
                         2 * c_i1i2i3q4[i1, i2, 1, q4] - c_i1i2i3q4[i1, i2, 2, q4]
                     )
-                    c_i1i2i3q4[i1, i2, self.n[k] + 2, q4] = (
-                        2 * c_i1i2i3q4[i1, i2, self.n[k] + 1, q4]
-                        - c_i1i2i3q4[i1, i2, self.n[k], q4]
+                    c_i1i2i3q4[i1, i2, n[k] + 2, q4] = (
+                        2 * c_i1i2i3q4[i1, i2, n[k] + 1, q4]
+                        - c_i1i2i3q4[i1, i2, n[k], q4]
                     )
 
         k = 3  # 4th dimension
         c_i1i2i3i4 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for i2 in range(self.n[1] + 3):
-                for i3 in range(self.n[2] + 3):
+        for i1 in range(n[0] + 3):
+            for i2 in range(n[1] + 3):
+                for i3 in range(n[2] + 3):
                     c_i1i2i3i4[i1, i2, i3, 1] = c_i1i2i3q4[i1, i2, i3, 0] / 6  # c_{2}
-                    c_i1i2i3i4[i1, i2, i3, self.n[k] + 1] = (
-                        c_i1i2i3q4[i1, i2, i3, self.n[k]] / 6
+                    c_i1i2i3i4[i1, i2, i3, n[k] + 1] = (
+                        c_i1i2i3q4[i1, i2, i3, n[k]] / 6
                     )  # c_{n+2}
                     A = (
-                        np.eye(self.n[k] - 1) * 4
-                        + np.eye(self.n[k] - 1, k=1)
-                        + np.eye(self.n[k] - 1, k=-1)
+                        np.eye(n[k] - 1) * 4
+                        + np.eye(n[k] - 1, k=1)
+                        + np.eye(n[k] - 1, k=-1)
                     )
-                    B = np.zeros(self.n[k] - 1)
+                    B = np.zeros(n[k] - 1)
                     B[0] = c_i1i2i3q4[i1, i2, i3, 1] - c_i1i2i3i4[i1, i2, i3, 1]
-                    B[self.n[k] - 2] = (
-                        c_i1i2i3q4[i1, i2, i3, self.n[k] - 1]
-                        - c_i1i2i3i4[i1, i2, i3, self.n[k] + 1]
+                    B[n[k] - 2] = (
+                        c_i1i2i3q4[i1, i2, i3, n[k] - 1]
+                        - c_i1i2i3i4[i1, i2, i3, n[k] + 1]
                     )
-                    B[1 : self.n[k] - 2] = c_i1i2i3q4[i1, i2, i3, 2 : self.n[k] - 1]
+                    B[1 : n[k] - 2] = c_i1i2i3q4[i1, i2, i3, 2 : n[k] - 1]
                     sol = linalg.solve(A, B)
-                    c_i1i2i3i4[i1, i2, i3, 2 : self.n[k] + 1] = sol
+                    c_i1i2i3i4[i1, i2, i3, 2 : n[k] + 1] = sol
                     c_i1i2i3i4[i1, i2, i3, 0] = (
                         2 * c_i1i2i3i4[i1, i2, i3, 1] - c_i1i2i3i4[i1, i2, i3, 2]
                     )
-                    c_i1i2i3i4[i1, i2, i3, self.n[k] + 2] = (
-                        2 * c_i1i2i3i4[i1, i2, i3, self.n[k] + 1]
-                        - c_i1i2i3i4[i1, i2, i3, self.n[k]]
+                    c_i1i2i3i4[i1, i2, i3, n[k] + 2] = (
+                        2 * c_i1i2i3i4[i1, i2, i3, n[k] + 1]
+                        - c_i1i2i3i4[i1, i2, i3, n[k]]
                     )
 
         return jnp.asarray(c_i1i2i3i4)
 
     def _compute_coefs_5d(self) -> Float[Array, "..."]:  # noqa: C901
+        n = self.n
         k = 0  # 1st dimension
         c_i1q2q3q4q5 = np.zeros(self.get_c_shape(k))
-        for q2 in range(self.n[1] + 1):
-            for q3 in range(self.n[2] + 1):
-                for q4 in range(self.n[3] + 1):
-                    for q5 in range(self.n[4] + 1):
+        for q2 in range(n[1] + 1):
+            for q3 in range(n[2] + 1):
+                for q4 in range(n[3] + 1):
+                    for q5 in range(n[4] + 1):
                         c_i1q2q3q4q5[1, q2, q3, q4, q5] = (
                             self.y_data[0, q2, q3, q4, q5] / 6
                         )  # c_{2}
-                        c_i1q2q3q4q5[self.n[k] + 1, q2, q3, q4, q5] = (
-                            self.y_data[self.n[k], q2, q3, q4, q5] / 6
+                        c_i1q2q3q4q5[n[k] + 1, q2, q3, q4, q5] = (
+                            self.y_data[n[k], q2, q3, q4, q5] / 6
                         )  # c_{n+2}
                         A = (
-                            np.eye(self.n[k] - 1) * 4
-                            + np.eye(self.n[k] - 1, k=1)
-                            + np.eye(self.n[k] - 1, k=-1)
+                            np.eye(n[k] - 1) * 4
+                            + np.eye(n[k] - 1, k=1)
+                            + np.eye(n[k] - 1, k=-1)
                         )
-                        B = np.zeros(self.n[k] - 1)
+                        B = np.zeros(n[k] - 1)
                         B[0] = (
                             self.y_data[1, q2, q3, q4, q5]
                             - c_i1q2q3q4q5[1, q2, q3, q4, q5]
                         )
-                        B[self.n[k] - 2] = (
-                            self.y_data[self.n[k] - 1, q2, q3, q4, q5]
-                            - c_i1q2q3q4q5[self.n[k] + 1, q2, q3, q4, q5]
+                        B[n[k] - 2] = (
+                            self.y_data[n[k] - 1, q2, q3, q4, q5]
+                            - c_i1q2q3q4q5[n[k] + 1, q2, q3, q4, q5]
                         )
-                        B[1 : self.n[k] - 2] = self.y_data[
-                            2 : self.n[k] - 1, q2, q3, q4, q5
-                        ]
+                        B[1 : n[k] - 2] = self.y_data[2 : n[k] - 1, q2, q3, q4, q5]
                         sol = linalg.solve(A, B)
-                        c_i1q2q3q4q5[2 : self.n[k] + 1, q2, q3, q4, q5] = sol
+                        c_i1q2q3q4q5[2 : n[k] + 1, q2, q3, q4, q5] = sol
                         c_i1q2q3q4q5[0, q2, q3, q4, q5] = (
                             2 * c_i1q2q3q4q5[1, q2, q3, q4, q5]
                             - c_i1q2q3q4q5[2, q2, q3, q4, q5]
                         )
-                        c_i1q2q3q4q5[self.n[k] + 2, q2, q3, q4, q5] = (
-                            2 * c_i1q2q3q4q5[self.n[k] + 1, q2, q3, q4, q5]
-                            - c_i1q2q3q4q5[self.n[k], q2, q3, q4, q5]
+                        c_i1q2q3q4q5[n[k] + 2, q2, q3, q4, q5] = (
+                            2 * c_i1q2q3q4q5[n[k] + 1, q2, q3, q4, q5]
+                            - c_i1q2q3q4q5[n[k], q2, q3, q4, q5]
                         )
 
         k = 1  # 2nd dimension
         c_i1i2q3q4q5 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for q3 in range(self.n[2] + 1):
-                for q4 in range(self.n[3] + 1):
-                    for q5 in range(self.n[4] + 1):
+        for i1 in range(n[0] + 3):
+            for q3 in range(n[2] + 1):
+                for q4 in range(n[3] + 1):
+                    for q5 in range(n[4] + 1):
                         c_i1i2q3q4q5[i1, 1, q3, q4, q5] = (
                             c_i1q2q3q4q5[i1, 0, q3, q4, q5] / 6
                         )  # c_{2}
-                        c_i1i2q3q4q5[i1, self.n[k] + 1, q3, q4, q5] = (
-                            c_i1q2q3q4q5[i1, self.n[k], q3, q4, q5] / 6
+                        c_i1i2q3q4q5[i1, n[k] + 1, q3, q4, q5] = (
+                            c_i1q2q3q4q5[i1, n[k], q3, q4, q5] / 6
                         )  # c_{n+2}
                         A = (
-                            np.eye(self.n[k] - 1) * 4
-                            + np.eye(self.n[k] - 1, k=1)
-                            + np.eye(self.n[k] - 1, k=-1)
+                            np.eye(n[k] - 1) * 4
+                            + np.eye(n[k] - 1, k=1)
+                            + np.eye(n[k] - 1, k=-1)
                         )
-                        B = np.zeros(self.n[k] - 1)
+                        B = np.zeros(n[k] - 1)
                         B[0] = (
                             c_i1q2q3q4q5[i1, 1, q3, q4, q5]
                             - c_i1i2q3q4q5[i1, 1, q3, q4, q5]
                         )
-                        B[self.n[k] - 2] = (
-                            c_i1q2q3q4q5[i1, self.n[k] - 1, q3, q4, q5]
-                            - c_i1i2q3q4q5[i1, self.n[k] + 1, q3, q4, q5]
+                        B[n[k] - 2] = (
+                            c_i1q2q3q4q5[i1, n[k] - 1, q3, q4, q5]
+                            - c_i1i2q3q4q5[i1, n[k] + 1, q3, q4, q5]
                         )
-                        B[1 : self.n[k] - 2] = c_i1q2q3q4q5[
-                            i1, 2 : self.n[k] - 1, q3, q4, q5
-                        ]
+                        B[1 : n[k] - 2] = c_i1q2q3q4q5[i1, 2 : n[k] - 1, q3, q4, q5]
                         sol = linalg.solve(A, B)
-                        c_i1i2q3q4q5[i1, 2 : self.n[k] + 1, q3, q4, q5] = sol
+                        c_i1i2q3q4q5[i1, 2 : n[k] + 1, q3, q4, q5] = sol
                         c_i1i2q3q4q5[i1, 0, q3, q4] = (
                             2 * c_i1i2q3q4q5[i1, 1, q3, q4, q5]
                             - c_i1i2q3q4q5[i1, 2, q3, q4, q5]
                         )
-                        c_i1i2q3q4q5[i1, self.n[k] + 2, q3, q4, q5] = (
-                            2 * c_i1i2q3q4q5[i1, self.n[k] + 1, q3, q4, q5]
-                            - c_i1i2q3q4q5[i1, self.n[k], q3, q4, q5]
+                        c_i1i2q3q4q5[i1, n[k] + 2, q3, q4, q5] = (
+                            2 * c_i1i2q3q4q5[i1, n[k] + 1, q3, q4, q5]
+                            - c_i1i2q3q4q5[i1, n[k], q3, q4, q5]
                         )
 
         k = 2  # 3rd dimension
         c_i1i2i3q4q5 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for i2 in range(self.n[1] + 3):
-                for q4 in range(self.n[3] + 1):
-                    for q5 in range(self.n[4] + 1):
+        for i1 in range(n[0] + 3):
+            for i2 in range(n[1] + 3):
+                for q4 in range(n[3] + 1):
+                    for q5 in range(n[4] + 1):
                         c_i1i2i3q4q5[i1, i2, 1, q4, q5] = (
                             c_i1i2q3q4q5[i1, i2, 0, q4, q5] / 6
                         )  # c_{2}
-                        c_i1i2i3q4q5[i1, i2, self.n[k] + 1, q4, q5] = (
-                            c_i1i2q3q4q5[i1, i2, self.n[k], q4, q5] / 6
+                        c_i1i2i3q4q5[i1, i2, n[k] + 1, q4, q5] = (
+                            c_i1i2q3q4q5[i1, i2, n[k], q4, q5] / 6
                         )  # c_{n+2}
                         A = (
-                            np.eye(self.n[k] - 1) * 4
-                            + np.eye(self.n[k] - 1, k=1)
-                            + np.eye(self.n[k] - 1, k=-1)
+                            np.eye(n[k] - 1) * 4
+                            + np.eye(n[k] - 1, k=1)
+                            + np.eye(n[k] - 1, k=-1)
                         )
-                        B = np.zeros(self.n[k] - 1)
+                        B = np.zeros(n[k] - 1)
                         B[0] = (
                             c_i1i2q3q4q5[i1, i2, 1, q4, q5]
                             - c_i1i2i3q4q5[i1, i2, 1, q4, q5]
                         )
-                        B[self.n[k] - 2] = (
-                            c_i1i2q3q4q5[i1, i2, self.n[k] - 1, q4, q5]
-                            - c_i1i2i3q4q5[i1, i2, self.n[k] + 1, q4, q5]
+                        B[n[k] - 2] = (
+                            c_i1i2q3q4q5[i1, i2, n[k] - 1, q4, q5]
+                            - c_i1i2i3q4q5[i1, i2, n[k] + 1, q4, q5]
                         )
-                        B[1 : self.n[k] - 2] = c_i1i2q3q4q5[
-                            i1, i2, 2 : self.n[k] - 1, q4, q5
-                        ]
+                        B[1 : n[k] - 2] = c_i1i2q3q4q5[i1, i2, 2 : n[k] - 1, q4, q5]
                         sol = linalg.solve(A, B)
-                        c_i1i2i3q4q5[i1, i2, 2 : self.n[k] + 1, q4, q5] = sol
+                        c_i1i2i3q4q5[i1, i2, 2 : n[k] + 1, q4, q5] = sol
                         c_i1i2i3q4q5[i1, i2, 0, q4, q5] = (
                             2 * c_i1i2i3q4q5[i1, i2, 1, q4, q5]
                             - c_i1i2i3q4q5[i1, i2, 2, q4, q5]
                         )
-                        c_i1i2i3q4q5[i1, i2, self.n[k] + 2, q4, q5] = (
-                            2 * c_i1i2i3q4q5[i1, i2, self.n[k] + 1, q4, q5]
-                            - c_i1i2i3q4q5[i1, i2, self.n[k], q4, q5]
+                        c_i1i2i3q4q5[i1, i2, n[k] + 2, q4, q5] = (
+                            2 * c_i1i2i3q4q5[i1, i2, n[k] + 1, q4, q5]
+                            - c_i1i2i3q4q5[i1, i2, n[k], q4, q5]
                         )
 
         k = 3  # 4th dimension
         c_i1i2i3i4q5 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for i2 in range(self.n[1] + 3):
-                for i3 in range(self.n[2] + 3):
-                    for q5 in range(self.n[4] + 1):
+        for i1 in range(n[0] + 3):
+            for i2 in range(n[1] + 3):
+                for i3 in range(n[2] + 3):
+                    for q5 in range(n[4] + 1):
                         c_i1i2i3i4q5[i1, i2, i3, 1, q5] = (
                             c_i1i2i3q4q5[i1, i2, i3, 0, q5] / 6
                         )  # c_{2}
-                        c_i1i2i3i4q5[i1, i2, i3, self.n[k] + 1, q5] = (
-                            c_i1i2i3q4q5[i1, i2, i3, self.n[k], q5] / 6
+                        c_i1i2i3i4q5[i1, i2, i3, n[k] + 1, q5] = (
+                            c_i1i2i3q4q5[i1, i2, i3, n[k], q5] / 6
                         )  # c_{n+2}
                         A = (
-                            np.eye(self.n[k] - 1) * 4
-                            + np.eye(self.n[k] - 1, k=1)
-                            + np.eye(self.n[k] - 1, k=-1)
+                            np.eye(n[k] - 1) * 4
+                            + np.eye(n[k] - 1, k=1)
+                            + np.eye(n[k] - 1, k=-1)
                         )
-                        B = np.zeros(self.n[k] - 1)
+                        B = np.zeros(n[k] - 1)
                         B[0] = (
                             c_i1i2i3q4q5[i1, i2, i3, 1, q5]
                             - c_i1i2i3i4q5[i1, i2, i3, 1, q5]
                         )
-                        B[self.n[k] - 2] = (
-                            c_i1i2i3q4q5[i1, i2, i3, self.n[k] - 1, q5]
-                            - c_i1i2i3i4q5[i1, i2, i3, self.n[k] + 1, q5]
+                        B[n[k] - 2] = (
+                            c_i1i2i3q4q5[i1, i2, i3, n[k] - 1, q5]
+                            - c_i1i2i3i4q5[i1, i2, i3, n[k] + 1, q5]
                         )
-                        B[1 : self.n[k] - 2] = c_i1i2i3q4q5[
-                            i1, i2, i3, 2 : self.n[k] - 1, q5
-                        ]
+                        B[1 : n[k] - 2] = c_i1i2i3q4q5[i1, i2, i3, 2 : n[k] - 1, q5]
                         sol = linalg.solve(A, B)
-                        c_i1i2i3i4q5[i1, i2, i3, 2 : self.n[k] + 1, q5] = sol
+                        c_i1i2i3i4q5[i1, i2, i3, 2 : n[k] + 1, q5] = sol
                         c_i1i2i3i4q5[i1, i2, i3, 0, q5] = (
                             2 * c_i1i2i3i4q5[i1, i2, i3, 1, q5]
                             - c_i1i2i3i4q5[i1, i2, i3, 2, q5]
                         )
-                        c_i1i2i3i4q5[i1, i2, i3, self.n[k] + 2, q5] = (
-                            2 * c_i1i2i3i4q5[i1, i2, i3, self.n[k] + 1, q5]
-                            - c_i1i2i3i4q5[i1, i2, i3, self.n[k], q5]
+                        c_i1i2i3i4q5[i1, i2, i3, n[k] + 2, q5] = (
+                            2 * c_i1i2i3i4q5[i1, i2, i3, n[k] + 1, q5]
+                            - c_i1i2i3i4q5[i1, i2, i3, n[k], q5]
                         )
 
         k = 4  # 5th dimension
         c_i1i2i3i4i5 = np.zeros(self.get_c_shape(k))
-        for i1 in range(self.n[0] + 3):
-            for i2 in range(self.n[1] + 3):
-                for i3 in range(self.n[2] + 3):
-                    for i4 in range(self.n[3] + 3):
+        for i1 in range(n[0] + 3):
+            for i2 in range(n[1] + 3):
+                for i3 in range(n[2] + 3):
+                    for i4 in range(n[3] + 3):
                         c_i1i2i3i4i5[i1, i2, i3, i4, 1] = (
                             c_i1i2i3i4q5[i1, i2, i3, i4, 0] / 6
                         )  # c_{2}
-                        c_i1i2i3i4i5[i1, i2, i3, i4, self.n[k] + 1] = (
-                            c_i1i2i3i4q5[i1, i2, i3, i4, self.n[k]] / 6
+                        c_i1i2i3i4i5[i1, i2, i3, i4, n[k] + 1] = (
+                            c_i1i2i3i4q5[i1, i2, i3, i4, n[k]] / 6
                         )  # c_{n+2}
                         A = (
-                            np.eye(self.n[k] - 1) * 4
-                            + np.eye(self.n[k] - 1, k=1)
-                            + np.eye(self.n[k] - 1, k=-1)
+                            np.eye(n[k] - 1) * 4
+                            + np.eye(n[k] - 1, k=1)
+                            + np.eye(n[k] - 1, k=-1)
                         )
-                        B = np.zeros(self.n[k] - 1)
+                        B = np.zeros(n[k] - 1)
                         B[0] = (
                             c_i1i2i3i4q5[i1, i2, i3, i4, 1]
                             - c_i1i2i3i4i5[i1, i2, i3, i4, 1]
                         )
-                        B[self.n[k] - 2] = (
-                            c_i1i2i3i4q5[i1, i2, i3, i4, self.n[k] - 1]
-                            - c_i1i2i3i4i5[i1, i2, i3, i4, self.n[k] + 1]
+                        B[n[k] - 2] = (
+                            c_i1i2i3i4q5[i1, i2, i3, i4, n[k] - 1]
+                            - c_i1i2i3i4i5[i1, i2, i3, i4, n[k] + 1]
                         )
-                        B[1 : self.n[k] - 2] = c_i1i2i3i4q5[
-                            i1, i2, i3, i4, 2 : self.n[k] - 1
-                        ]
+                        B[1 : n[k] - 2] = c_i1i2i3i4q5[i1, i2, i3, i4, 2 : n[k] - 1]
                         sol = linalg.solve(A, B)
-                        c_i1i2i3i4i5[i1, i2, i3, i4, 2 : self.n[k] + 1] = sol
+                        c_i1i2i3i4i5[i1, i2, i3, i4, 2 : n[k] + 1] = sol
                         c_i1i2i3i4i5[i1, i2, i3, i4, 0] = (
                             2 * c_i1i2i3i4i5[i1, i2, i3, i4, 1]
                             - c_i1i2i3i4i5[i1, i2, i3, i4, 2]
                         )
-                        c_i1i2i3i4i5[i1, i2, i3, i4, self.n[k] + 2] = (
-                            2 * c_i1i2i3i4i5[i1, i2, i3, i4, self.n[k] + 1]
-                            - c_i1i2i3i4i5[i1, i2, i3, i4, self.n[k]]
+                        c_i1i2i3i4i5[i1, i2, i3, i4, n[k] + 2] = (
+                            2 * c_i1i2i3i4i5[i1, i2, i3, i4, n[k] + 1]
+                            - c_i1i2i3i4i5[i1, i2, i3, i4, n[k]]
                         )
 
         return jnp.asarray(c_i1i2i3i4i5)
@@ -555,19 +522,19 @@ class SplineCoefs_from_GriddedData:
         """Compute the coefficients for the spline interpolation."""
         N = eqx.error_if(self.N, self.N > 5, "N>=6 is unsupported!")
 
-        if self.N == 1:
+        if N == 1:
             out = self._compute_coefs_1d()
 
-        elif self.N == 2:
+        elif N == 2:
             out = self._compute_coefs_2d()
 
-        elif self.N == 3:
+        elif N == 3:
             out = self._compute_coefs_3d()
 
-        elif self.N == 4:
+        elif N == 4:
             out = self._compute_coefs_4d()
 
-        elif self.N == 5:
+        elif N == 5:
             out = self._compute_coefs_5d()
 
         return out
