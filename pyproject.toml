@@ -191,6 +191,7 @@
       ]
       "notebooks/**" = ["ANN", "D103", "FBT", "T201"]
       "noxfile.py" = ["ERA001", "T20"]
+      "src/ndimsplinejax/_version.py" = ["SIM108"]
       "tests/**" = [
         "ANN",
         "D10",
@@ -230,3 +231,10 @@
   py-version = "3.11"
   reports.output-format = "colorized"
   similarities.ignore-imports = "yes"
+
+
+[tool.repo-review]
+ignore = [
+    "PY004",  # Has docs folder
+    "RTD100",  # RTD
+]

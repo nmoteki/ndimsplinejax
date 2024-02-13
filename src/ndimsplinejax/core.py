@@ -1,42 +1,47 @@
+"""N-dimensional spline interpolant."""
+
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jaxtyping import ArrayLike
+from jaxtyping import Array, ArrayLike, Float
 
 
 class SplineInterpolant:
     """Spline Interpolant.
 
-    Auto-differencible and Jittable N-dimensitonal spline interpolant using Google/JAX
-    Current code supports only 3 and 4 dimensions (N=3 or 4), which are used for CAS data analysis
+    Auto-differencible and Jittable N-dimensitonal spline interpolant using
+    Google/JAX Current code supports only 3 and 4 dimensions (N=3 or 4), which
+    are used for CAS data analysis
 
     Author:
         N.Moteki, (The University of Tokyo, NOAA Earth System Research Lab).
 
     Assumptions:
-        x space (independent valiables) is N-dimension
-        Equidistant x-grid in each dimension
-        y datum (single real value) is given at each grid point
+        x space (independent variables) is N-dimension Equidistant x-grid in
+        each dimension y datum (single real value) is given at each grid point
 
     User's Inputs:
-        a: N-list of lower boundary of x-space [1st-dim, 2nd-dim,...].
-        b: N-list of upper boundary of x-space [1st-dim, 2nd-dim,...].
-        n: N-list of the number of grid intervals in each dimension.
-        c: N-dimensional numpy array (dtype=float) of spline coeffcieints computed using "SplineCoefs_from_GriddedData" module
+        a: N-list of lower boundary of x-space [1st-dim, 2nd-dim,...].  b:
+        N-list of upper boundary of x-space [1st-dim, 2nd-dim,...].  n: N-list
+        of the number of grid intervals in each dimension.  c: N-dimensional
+        numpy array (dtype=float) of spline coeffcieints computed using
+        "SplineCoefs_from_GriddedData" module
 
     Output:
-        s3D(x): Autodifferencible and jittable spline interpolant for 3-dim x input vector
-        s4D(x): Autodifferencible and jittable spline interpolant for 4-dim x input vector.
+        s3D(x): Autodifferencible and jittable spline interpolant for 3-dim x
+        input vector s4D(x): Autodifferencible and jittable spline interpolant
+        for 4-dim x input vector.
 
     Usage:
         from SplineInterpolant import SplineInterpolant  # import this module
-        spline= SplineInterpolant(a,b,n,c_i1...iN) # constructor
-        y= spline.sND(x) # evaluate the interpolated y value at the input x vector, where the sND is s3D (if N=3) or s4D (if N=4).
-        spline.sND is a jittable and auto-differentiable function with respect to x
+        spline= SplineInterpolant(a,b,n,c_i1...iN) # constructor y=
+        spline.sND(x) # evaluate the interpolated y value at the input x vector,
+        where the sND is s3D (if N=3) or s4D (if N=4).  spline.sND is a jittable
+        and auto-differentiable function with respect to x
 
-    Ref.
-    Habermann, C., & Kindermann, F. (2007). Multidimensional spline interpolation: Theory and applications. Computational Economics, 30(2), 153-169.
-    Notation is modified by N.Moteki as Note of 2022 September 23-27th
+    Ref.  Habermann, C., & Kindermann, F. (2007). Multidimensional spline
+    interpolation: Theory and applications. Computational Economics, 30(2),
+    153-169.  Notation is modified by N.Moteki as Note of 2022 September 23-27th
 
     Created on Fri Oct 21 13:41:11 2022
 
@@ -44,19 +49,16 @@ class SplineInterpolant:
     """
 
     def __init__(self, a: ArrayLike, b: ArrayLike, n: ArrayLike, c: ArrayLike) -> None:
-
         self.N = len(a)  # dimension of the problem
-        self.a = jnp.array(
-            a
-        )  # list of lower bound of x-coordinate in each dimension # [1st dim, 2nd dim, ... ]
-        self.b = jnp.array(
-            b
-        )  # list of uppder bound of x-coordinate in each dimension # [1st dim, 2nd dim, ... ]
-        self.n = jnp.array(n)  # number of grid interval n in each dimension
+        # list of lower bound of x-coordinate in each dimension # [dim1, dim2, ...]
+        self.a = jnp.asarray(a)
+        # list of uppder bound of x-coordinate in each dimension # [dim1, dim2, ...]
+        self.b = jnp.asarray(b)
+        self.n = jnp.asarray(n)  # number of grid interval n in each dimension
         self.h = (self.b - self.a) / self.n  # grid interval in each dimension
-        self.c = jnp.array(
-            c
-        )  # N-dimensional numpy array of y-data ydata[idx1,idx2,...] where the idx1 is the index of grid point along 1st dimension and so forth
+        # N-dimensional numpy array of y-data ydata[idx1,idx2,...] where the
+        # idx1 is the index of grid point along 1st dimension and so forth.
+        self.c = jnp.asarray(c)
 
     def s1D(self, x: jax.Array) -> jax.Array:
         """1D-spline interpolation.
@@ -65,10 +67,10 @@ class SplineInterpolant:
         x: 1-dim x vector (float) at which interplated y-value is evaluated
         a: 1-dim vector (float) of the lower boundary of the each of the x-dimension
         h: 1-dim vector (float) of the grid interval of the each of the x-dimension
-        c: spline coefficent (1-dim array)
+        c: spline coefficient (1-dim array)
         """
 
-        def u(ii, aa, hh, xx):
+        def u(ii: int, aa: float, hh: float, xx: Float[Array, ""]) -> Float[Array, ""]:
             t = jnp.abs((xx - aa) / hh + 2 - ii)
             return lax.cond(
                 t <= 1,
@@ -77,7 +79,9 @@ class SplineInterpolant:
                 t,
             ) * jnp.heaviside(2.0 - t, 1.0)
 
-        def f(carry, i1, x):
+        def f(
+            carry: Float[Array, ""], i1: int, x: Float[Array, ""]
+        ) -> tuple[Float[Array, ""], Float[Array, ""]]:
             val = self.c[i1 - 1] * u(i1, self.a[0], self.h[0], x[0])
             carry += val
             return carry, val
@@ -88,17 +92,17 @@ class SplineInterpolant:
 
         return carry
 
-    def s2D(self, x: jax.Array) -> jax.Array:
+    def s2D(self, x: Float[Array, "2"]) -> Float[Array, "2"]:
         """2D-spline interpolation.
 
         INPUTs
         x: 2-dim x vector (float) at which interplated y-value is evaluated
         a: 2-dim vector (float) of the lower boundary of the each of the x-dimension
         h: 2-dim vector (float) of the grid interval of the each of the x-dimension
-        c: spline coefficent (2-dim array)
+        c: spline coefficient (2-dim array)
         """
 
-        def u(ii, aa, hh, xx):
+        def u(ii: int, aa: float, hh: float, xx: Float[Array, ""]) -> Float[Array, ""]:
             t = jnp.abs((xx - aa) / hh + 2 - ii)
             return lax.cond(
                 t <= 1,
@@ -107,7 +111,9 @@ class SplineInterpolant:
                 t,
             ) * jnp.heaviside(2.0 - t, 1.0)
 
-        def f(carry, i1, i2, x):
+        def f(
+            carry: Float[Array, ""], i1: int, i2: int, x: Float[Array, ""]
+        ) -> tuple[Float[Array, ""], Float[Array, ""]]:
             val = (
                 self.c[i1 - 1, i2 - 1]
                 * u(i1, self.a[0], self.h[0], x[0])
@@ -134,10 +140,10 @@ class SplineInterpolant:
         x: 3-dim x vector (float) at which interplated y-value is evaluated
         a: 3-dim vector (float) of the lower boundary of the each of the x-dimension
         h: 3-dim vector (float) of the grid interval of the each of the x-dimension
-        c: spline coefficent (3-dim array)
+        c: spline coefficient (3-dim array)
         """
 
-        def u(ii, aa, hh, xx):
+        def u(ii: int, aa: float, hh: float, xx: Float[Array, ""]) -> Float[Array, ""]:
             t = jnp.abs((xx - aa) / hh + 2 - ii)
             return lax.cond(
                 t <= 1,
@@ -146,7 +152,9 @@ class SplineInterpolant:
                 t,
             ) * jnp.heaviside(2.0 - t, 1.0)
 
-        def f(carry, i1, i2, i3, x):
+        def f(
+            carry: Float[Array, ""], i1: int, i2: int, i3: int, x: Float[Array, ""]
+        ) -> tuple[Float[Array, ""], Float[Array, ""]]:
             val = (
                 self.c[i1 - 1, i2 - 1, i3 - 1]
                 * u(i1, self.a[0], self.h[0], x[0])
@@ -181,10 +189,12 @@ class SplineInterpolant:
         x: 4-dim x vector (float) at which interplated y-value is evaluated
         a: 4-dim vector (float) of the lower boundary of the each of the x-dimension
         h: 4-dim vector (float) of the grid interval of the each of the x-dimension
-        c: spline coefficent (4-dim array)
+        c: spline coefficient (4-dim array)
         """
 
-        def u(ii, aa, hh, xx):
+        def u(
+            ii: int, aa: Float[Array, ""], hh: Float[Array, ""], xx: Float[Array, ""]
+        ) -> Float[Array, ""]:
             t = jnp.abs((xx - aa) / hh + 2 - ii)
             return lax.cond(
                 t <= 1,
@@ -193,7 +203,14 @@ class SplineInterpolant:
                 t,
             ) * jnp.heaviside(2.0 - t, 1.0)
 
-        def f(carry, i1, i2, i3, i4, x):
+        def f(
+            carry: Float[Array, ""],
+            i1: int,
+            i2: int,
+            i3: int,
+            i4: int,
+            x: Float[Array, ""],
+        ) -> tuple[Float[Array, ""], Float[Array, ""]]:
             val = (
                 self.c[i1 - 1, i2 - 1, i3 - 1, i4 - 1]
                 * u(i1, self.a[0], self.h[0], x[0])
@@ -234,10 +251,10 @@ class SplineInterpolant:
         x: 5-dim x vector (float) at which interplated y-value is evaluated
         a: 5-dim vector (float) of the lower boundary of the each of the x-dimension
         h: 5-dim vector (float) of the grid interval of the each of the x-dimension
-        c: spline coefficent (5-dim array)
+        c: spline coefficient (5-dim array)
         """
 
-        def u(ii, aa, hh, xx):
+        def u(ii: int, aa: float, hh: float, xx: float) -> Float[Array, ""]:
             t = jnp.abs((xx - aa) / hh + 2 - ii)
             return lax.cond(
                 t <= 1,
@@ -246,7 +263,15 @@ class SplineInterpolant:
                 t,
             ) * jnp.heaviside(2.0 - t, 1.0)
 
-        def f(carry, i1, i2, i3, i4, i5, x):
+        def f(
+            carry: int,
+            i1: int,
+            i2: int,
+            i3: int,
+            i4: int,
+            i5: int,
+            x: Float[Array, "5"],
+        ) -> tuple[int, Float[Array, "5"]]:
             val = (
                 self.c[i1 - 1, i2 - 1, i3 - 1, i4 - 1, i5 - 1]
                 * u(i1, self.a[0], self.h[0], x[0])

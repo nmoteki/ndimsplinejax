@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: 3
+
+jobs:
+  pre-commit:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --hook-stage manual --all-files
+      # - name: Run PyLint
+      #   run: |
+      #     echo "::add-matcher::$GITHUB_WORKSPACE/.github/matchers/pylint.json"
+      #     pipx run nox -s pylint
+
+  # Where there's smoke, there's fire!
+  smoke:
+    name: Smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install package
+        run: python -m pip install ".[test]"
+      - name: Run smoke test
+        run: python -m pytest tests/smoke -ra
+
+  checks:
+    name: Check Python ${{ matrix.python-version }} on ${{ matrix.runs-on }}
+    runs-on: ${{ matrix.runs-on }}
+    needs: [pre-commit, smoke]
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        runs-on: [ubuntu-latest, macos-latest, windows-latest]
+
+        # TODO: figure out OpenBLAS install
+        #   ``ERROR: Dependency "OpenBLAS" not found, tried pkgconfig and cmake``
+        # include:
+        #   - python-version: pypy-3.11
+        #     runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Install package
+        run: python -m pip install .[test]
+
+      - name: Test package
+        run: >-
+          python -m pytest src docs tests/unit tests/functional -ra --cov
+          --cov-report=xml --cov-report=term --durations=20 --arraydiff -m"not
+          slow"
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4.0.1

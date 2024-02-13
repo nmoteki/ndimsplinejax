@@ -1,3 +1,9 @@
+"""Module for computing the spline coefficients from gridded data.
+
+Compute the coefficients of the N-dimensitonal natural-cubic spline interpolant
+defined by Habermann and Kindermann 2007.
+"""
+
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
@@ -16,7 +22,7 @@ class SplineCoefs_from_GriddedData:
         N.Moteki, (The University of Tokyo, NOAA Earth System Research Lab).
 
     Assumptions:
-        x space (independent valiables) is N-dimension Equidistant x-grid in
+        x space (independent variables) is N-dimension Equidistant x-grid in
         each dimension y datum (single real value) is given at each grid point
 
     User's Inputs:
@@ -44,9 +50,9 @@ class SplineCoefs_from_GriddedData:
 
     def __init__(self, a: ArrayLike, b: ArrayLike, y_data: ArrayLike) -> None:
         self.N = len(a)  # dimension of the problem
-        # list of lower bound of x-coordinate in each dimension # [1st dim, 2nd dim, ... ]
+        # list of lower bound of x-coordinate in each dimension [dim1, dim2, ... ]
         self.a = np.array(a, dtype=float)
-        # list of uppder bound of x-coordinate in each dimension # [1st dim, 2nd dim, ... ]
+        # list of uppder bound of x-coordinate in each dimension [dim1, dim2, ... ]
         self.b = np.array(b, dtype=float)
         # number of grid interval n in each dimension
         self.n = np.zeros(self.N, dtype=int)
@@ -57,7 +63,7 @@ class SplineCoefs_from_GriddedData:
             # number of grid interval n in each dimension
             self.n[j] = self.y_data.shape[j] - 1
 
-    def get_c_shape(self, k: int) -> tuple:
+    def get_c_shape(self, k: int) -> tuple[int]:
         """Get the shape of the coefficient array."""
         return tuple(self.n[j] + (3 if j <= k else 1) for j in range(self.N))
 
@@ -210,7 +216,7 @@ class SplineCoefs_from_GriddedData:
 
         return jnp.asarray(c_i1i2i3)
 
-    def _compute_coefs_4d(self) -> Float[Array, "..."]:
+    def _compute_coefs_4d(self) -> Float[Array, "..."]:  # noqa: C901
         k = 0  # 1st dimension
         c_i1q2q3q4 = np.zeros(self.get_c_shape(k))
         for q2 in range(self.n[1] + 1):
@@ -337,7 +343,7 @@ class SplineCoefs_from_GriddedData:
 
         return jnp.asarray(c_i1i2i3i4)
 
-    def _compute_coefs_5d(self) -> Float[Array, "..."]:
+    def _compute_coefs_5d(self) -> Float[Array, "..."]:  # noqa: C901
         k = 0  # 1st dimension
         c_i1q2q3q4q5 = np.zeros(self.get_c_shape(k))
         for q2 in range(self.n[1] + 1):
