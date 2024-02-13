@@ -47,7 +47,7 @@ for q1 in range(n[0] + 1):
 
 # compute spline coefficients from the gridded data
 spline_coef = SplineCoefs_from_GriddedData(a, b, y_data)
-c_i1i2i3i4i5 = spline_coef.Compute_Coefs()
+c_i1i2i3i4i5 = spline_coef.compute_coeffs()
 
 # compute the jittable and auto-differentiable spline interpolant using the coefficient.
 spline = SplineInterpolant(a, b, n, c_i1i2i3i4i5)

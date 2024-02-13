@@ -39,7 +39,7 @@ class SplineCoefs_from_GriddedData(eqx.Module):  # type: ignore[misc]
     Usage:
         >>> from ``SplineCoefs_from_GriddedData`` import SplineCoefs_from_GriddedData
         >>> spline_coef = SplineCoefs_from_GriddedData(a,b,n,y_data)
-        >>> spline_coef.Compute_Coefs()
+        >>> spline_coef.compute_coeffs()
 
 
     Ref.  Habermann, C., & Kindermann, F. (2007). Multidimensional spline
@@ -518,7 +518,7 @@ class SplineCoefs_from_GriddedData(eqx.Module):  # type: ignore[misc]
 
         return jnp.asarray(c_i1i2i3i4i5)
 
-    def Compute_Coefs(self) -> Float[Array, "..."]:
+    def compute_coeffs(self) -> Float[Array, "..."]:
         """Compute the coefficients for the spline interpolation."""
         N = eqx.error_if(self.N, self.N > 5, "N>=6 is unsupported!")
 

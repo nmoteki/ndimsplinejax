@@ -183,7 +183,7 @@ Here is the workflow for an example of 5-dimensional x-space (N=5):
 
    # Compute the spline coefficients c_i1...iN
    # (The author recommend a name of the coefficients matrix to be N-explicit for readability)
-   c_i1i2i3i4i5 = spline_coef.Compute_Coefs()
+   c_i1i2i3i4i5 = spline_coef.compute_coeffs()
    ```
 
 4. Generate the JIT & AD -able interpolant from the coefficients, using the
