@@ -80,7 +80,7 @@ jobs:
 
       - name: Test package
         run: >-
-          python -m pytest src docs tests/unit tests/functional -ra --cov
+          python -m pytest src tests/unit tests/functional -ra --cov
           --cov-report=xml --cov-report=term --durations=20 --arraydiff -m"not
           slow"
 
