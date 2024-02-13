@@ -1,9 +1,29 @@
 """N-dimensional spline interpolant."""
 
+from typing import TypeAlias
+
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jaxtyping import Array, ArrayLike, Float
+from jaxtyping import Array, ArrayLike, Float, Int
+
+FloatScalar: TypeAlias = Float[Array, ""]
+IntScalar: TypeAlias = Int[Array, ""]
+
+
+def _u(
+    ii: IntScalar,
+    aa: FloatScalar | IntScalar,
+    hh: FloatScalar | IntScalar,
+    xx: FloatScalar,
+) -> FloatScalar:
+    t = jnp.abs((xx - aa) / hh + 2 - ii)
+    return lax.cond(
+        t <= 1,
+        lambda t: 4.0 - 6.0 * t**2 + 3.0 * t**3,
+        lambda t: (2.0 - t) ** 3,
+        t,
+    ) * jnp.heaviside(2.0 - t, 1.0)
 
 
 class SplineInterpolant:
@@ -48,7 +68,13 @@ class SplineInterpolant:
     @author: moteki
     """
 
-    def __init__(self, a: ArrayLike, b: ArrayLike, n: ArrayLike, c: ArrayLike) -> None:
+    def __init__(
+        self,
+        a: ArrayLike | list[float | int],
+        b: ArrayLike | list[float | int],
+        n: ArrayLike | list[float | int],
+        c: ArrayLike | list[float | int],
+    ) -> None:
         self.N = len(a)  # dimension of the problem
         # list of lower bound of x-coordinate in each dimension # [dim1, dim2, ...]
         self.a = jnp.asarray(a)
@@ -70,19 +96,10 @@ class SplineInterpolant:
         c: spline coefficient (1-dim array)
         """
 
-        def u(ii: int, aa: float, hh: float, xx: Float[Array, ""]) -> Float[Array, ""]:
-            t = jnp.abs((xx - aa) / hh + 2 - ii)
-            return lax.cond(
-                t <= 1,
-                lambda t: 4.0 - 6.0 * t**2 + 3.0 * t**3,
-                lambda t: (2.0 - t) ** 3,
-                t,
-            ) * jnp.heaviside(2.0 - t, 1.0)
-
         def f(
-            carry: Float[Array, ""], i1: int, x: Float[Array, ""]
-        ) -> tuple[Float[Array, ""], Float[Array, ""]]:
-            val = self.c[i1 - 1] * u(i1, self.a[0], self.h[0], x[0])
+            carry: FloatScalar, i1: IntScalar, x: FloatScalar
+        ) -> tuple[FloatScalar, FloatScalar]:
+            val = self.c[i1 - 1] * _u(i1, self.a[0], self.h[0], x[0])
             carry += val
             return carry, val
 
@@ -102,22 +119,16 @@ class SplineInterpolant:
         c: spline coefficient (2-dim array)
         """
 
-        def u(ii: int, aa: float, hh: float, xx: Float[Array, ""]) -> Float[Array, ""]:
-            t = jnp.abs((xx - aa) / hh + 2 - ii)
-            return lax.cond(
-                t <= 1,
-                lambda t: 4.0 - 6.0 * t**2 + 3.0 * t**3,
-                lambda t: (2.0 - t) ** 3,
-                t,
-            ) * jnp.heaviside(2.0 - t, 1.0)
-
         def f(
-            carry: Float[Array, ""], i1: int, i2: int, x: Float[Array, ""]
-        ) -> tuple[Float[Array, ""], Float[Array, ""]]:
+            carry: FloatScalar,
+            i1: IntScalar,
+            i2: IntScalar,
+            x: FloatScalar,
+        ) -> tuple[FloatScalar, FloatScalar]:
             val = (
                 self.c[i1 - 1, i2 - 1]
-                * u(i1, self.a[0], self.h[0], x[0])
-                * u(i2, self.a[1], self.h[1], x[1])
+                * _u(i1, self.a[0], self.h[0], x[0])
+                * _u(i2, self.a[1], self.h[1], x[1])
             )
             carry += val
             return carry, val
@@ -143,23 +154,18 @@ class SplineInterpolant:
         c: spline coefficient (3-dim array)
         """
 
-        def u(ii: int, aa: float, hh: float, xx: Float[Array, ""]) -> Float[Array, ""]:
-            t = jnp.abs((xx - aa) / hh + 2 - ii)
-            return lax.cond(
-                t <= 1,
-                lambda t: 4.0 - 6.0 * t**2 + 3.0 * t**3,
-                lambda t: (2.0 - t) ** 3,
-                t,
-            ) * jnp.heaviside(2.0 - t, 1.0)
-
         def f(
-            carry: Float[Array, ""], i1: int, i2: int, i3: int, x: Float[Array, ""]
-        ) -> tuple[Float[Array, ""], Float[Array, ""]]:
+            carry: FloatScalar,
+            i1: IntScalar,
+            i2: IntScalar,
+            i3: IntScalar,
+            x: FloatScalar,
+        ) -> tuple[FloatScalar, FloatScalar]:
             val = (
                 self.c[i1 - 1, i2 - 1, i3 - 1]
-                * u(i1, self.a[0], self.h[0], x[0])
-                * u(i2, self.a[1], self.h[1], x[1])
-                * u(i3, self.a[2], self.h[2], x[2])
+                * _u(i1, self.a[0], self.h[0], x[0])
+                * _u(i2, self.a[1], self.h[1], x[1])
+                * _u(i3, self.a[2], self.h[2], x[2])
             )
             carry += val
             return carry, val
@@ -192,31 +198,20 @@ class SplineInterpolant:
         c: spline coefficient (4-dim array)
         """
 
-        def u(
-            ii: int, aa: Float[Array, ""], hh: Float[Array, ""], xx: Float[Array, ""]
-        ) -> Float[Array, ""]:
-            t = jnp.abs((xx - aa) / hh + 2 - ii)
-            return lax.cond(
-                t <= 1,
-                lambda t: 4.0 - 6.0 * t**2 + 3.0 * t**3,
-                lambda t: (2.0 - t) ** 3,
-                t,
-            ) * jnp.heaviside(2.0 - t, 1.0)
-
         def f(
-            carry: Float[Array, ""],
-            i1: int,
-            i2: int,
-            i3: int,
-            i4: int,
-            x: Float[Array, ""],
-        ) -> tuple[Float[Array, ""], Float[Array, ""]]:
+            carry: FloatScalar,
+            i1: IntScalar,
+            i2: IntScalar,
+            i3: IntScalar,
+            i4: IntScalar,
+            x: FloatScalar,
+        ) -> tuple[FloatScalar, FloatScalar]:
             val = (
                 self.c[i1 - 1, i2 - 1, i3 - 1, i4 - 1]
-                * u(i1, self.a[0], self.h[0], x[0])
-                * u(i2, self.a[1], self.h[1], x[1])
-                * u(i3, self.a[2], self.h[2], x[2])
-                * u(i4, self.a[3], self.h[3], x[3])
+                * _u(i1, self.a[0], self.h[0], x[0])
+                * _u(i2, self.a[1], self.h[1], x[1])
+                * _u(i3, self.a[2], self.h[2], x[2])
+                * _u(i4, self.a[3], self.h[3], x[3])
             )
             carry += val
             return carry, val
@@ -254,31 +249,22 @@ class SplineInterpolant:
         c: spline coefficient (5-dim array)
         """
 
-        def u(ii: int, aa: float, hh: float, xx: float) -> Float[Array, ""]:
-            t = jnp.abs((xx - aa) / hh + 2 - ii)
-            return lax.cond(
-                t <= 1,
-                lambda t: 4.0 - 6.0 * t**2 + 3.0 * t**3,
-                lambda t: (2.0 - t) ** 3,
-                t,
-            ) * jnp.heaviside(2.0 - t, 1.0)
-
         def f(
-            carry: int,
-            i1: int,
-            i2: int,
-            i3: int,
-            i4: int,
-            i5: int,
+            carry: FloatScalar,
+            i1: IntScalar,
+            i2: IntScalar,
+            i3: IntScalar,
+            i4: IntScalar,
+            i5: IntScalar,
             x: Float[Array, "5"],
-        ) -> tuple[int, Float[Array, "5"]]:
+        ) -> tuple[FloatScalar, FloatScalar]:
             val = (
                 self.c[i1 - 1, i2 - 1, i3 - 1, i4 - 1, i5 - 1]
-                * u(i1, self.a[0], self.h[0], x[0])
-                * u(i2, self.a[1], self.h[1], x[1])
-                * u(i3, self.a[2], self.h[2], x[2])
-                * u(i4, self.a[3], self.h[3], x[3])
-                * u(i5, self.a[4], self.h[4], x[4])
+                * _u(i1, self.a[0], self.h[0], x[0])
+                * _u(i2, self.a[1], self.h[1], x[1])
+                * _u(i3, self.a[2], self.h[2], x[2])
+                * _u(i4, self.a[3], self.h[3], x[3])
+                * _u(i5, self.a[4], self.h[4], x[4])
             )
             carry += val
             return carry, val

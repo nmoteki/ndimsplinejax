@@ -48,7 +48,12 @@ class SplineCoefs_from_GriddedData:
     Created on Fri Oct 21 13:41:11 2022
     """
 
-    def __init__(self, a: ArrayLike, b: ArrayLike, y_data: ArrayLike) -> None:
+    def __init__(
+        self,
+        a: ArrayLike | list[float | int],
+        b: ArrayLike | list[float | int],
+        y_data: ArrayLike,
+    ) -> None:
         self.N = len(a)  # dimension of the problem
         # list of lower bound of x-coordinate in each dimension [dim1, dim2, ... ]
         self.a = np.array(a, dtype=float)
@@ -63,9 +68,9 @@ class SplineCoefs_from_GriddedData:
             # number of grid interval n in each dimension
             self.n[j] = self.y_data.shape[j] - 1
 
-    def get_c_shape(self, k: int) -> tuple[int]:
+    def get_c_shape(self, k: int) -> tuple[int, ...]:
         """Get the shape of the coefficient array."""
-        return tuple(self.n[j] + (3 if j <= k else 1) for j in range(self.N))
+        return tuple(int(self.n[j]) + (3 if j <= k else 1) for j in range(self.N))
 
     def _compute_coefs_1d(self) -> Float[Array, "..."]:
         k = 0  # 1-st dimension

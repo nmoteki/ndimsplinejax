@@ -23,6 +23,7 @@
     "Typing :: Typed",
   ]
   dependencies = [
+    "beartype",
     "numpy",
     "scipy",
     "jax",
